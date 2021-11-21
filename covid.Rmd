@@ -1,0 +1,621 @@
+---
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r}
+library("MTS")
+library(tsDyn) # for vecm
+library(urca)
+library(lmtest) #granger test
+library('readxl')
+library('ggplot2')
+library('dplyr')
+library(lubridate)
+library(corrplot)
+library(tseries)
+library(vars)
+library(xts)
+library(forecast)
+
+```
+
+```{r}
+covid=read_excel('covid.xlsx')
+unemployment=read_excel('unemployment.xlsx')
+economic=read_excel('Economic.xlsx')
+health=read_excel('Health.xlsx')
+response=read_excel('response.xlsx')
+stringency=read_excel('Stringency.xlsx')
+colnames(covid)=c('Date','Sing','UK','US')
+colnames(unemployment)=c('Date','Sing','UK','US')
+colnames(economic)=c('Date','Sing','UK','US')
+colnames(health)=c('Date','Sing','UK','US')
+colnames(response)=c('Date','Sing','UK','US')
+colnames(stringency)=c('Date','Sing','UK','US')
+covid$Date=as.Date(covid$Date)
+economic$Date=as.Date(economic$Date)
+health$Date=as.Date(health$Date)
+response$Date=as.Date(response$Date)
+stringency$Date=as.Date(stringency$Date)
+head(covid)
+head(unemployment)
+
+```
+
+
+
+```{r}
+ggplot(data=covid,mapping = aes(x=Date,y=Sing))+geom_point()+geom_smooth()
+ggplot(data=covid,mapping = aes(x=Date,y=UK))+geom_point()+geom_smooth()
+ggplot(data=covid,mapping = aes(x=Date,y=US))+geom_point()+geom_smooth()
+cumsum_covid=covid
+cumsum_covid$Sing=cumsum(covid$Sing)
+cumsum_covid$UK=cumsum(covid$UK)
+cumsum_covid$US=cumsum(covid$US)
+ggplot(data=cumsum_covid,mapping = aes(x=Date,y=Sing))+geom_point()+geom_smooth()
+ggplot(data=cumsum_covid,mapping = aes(x=Date,y=UK))+geom_point()+geom_smooth()
+ggplot(data=cumsum_covid,mapping = aes(x=Date,y=US))+geom_point()+geom_smooth()
+
+```
+
+```{r}
+unemployment$Month=c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21)
+ggplot(data=unemployment,mapping = aes(x=Month,y=Sing))+geom_point()+geom_smooth()
+ggplot(data=unemployment,mapping = aes(x=Month,y=UK))+geom_point()+geom_smooth()
+ggplot(data=unemployment,mapping = aes(x=Month,y=US))+geom_point()+geom_smooth()
+
+```
+
+
+```{r}
+
+MTSplot(as.ts(covid[,c(2,3,4)]))
+MTSplot(as.ts(economic[,c(2,3,4)]))
+MTSplot(as.ts(health[,c(2,3,4)]))
+MTSplot(as.ts(response[,c(2,3,4)]))
+MTSplot(as.ts(stringency[,c(2,3,4)]))
+MTSplot(as.ts(unemployment[,c(2,3,4)]))
+```
+
+
+```{r}
+colnames(covid)=c('Date','covid_Sing','covid_UK','covid_US')
+colnames(economic)=c('Date','economic_Sing','economic_UK','economic_US')
+colnames(health)=c('Date','health_Sing','health_UK','health_US')
+colnames(response)=c('Date','response_Sing','response_UK','response_US')
+colnames(stringency)=c('Date','stringency_Sing','stringency_UK','stringency_US')
+total=merge(covid,economic,by="Date")
+total=merge(total,health,by="Date")
+total=merge(total,response,by="Date")
+total=merge(total,stringency,by="Date")
+totalbymonth1 <- aggregate(cbind(covid_Sing,covid_UK,covid_US,economic_Sing,economic_UK,economic_US,health_Sing,health_UK,health_US,response_Sing,response_UK,response_US,stringency_Sing,stringency_UK,stringency_US)~month(Date),
+             data=total[total["Date"]<="2020-12-31 UTC",],FUN=sum)
+totalbymonth2 <- aggregate(cbind(covid_Sing,covid_UK,covid_US,economic_Sing,economic_UK,economic_US,health_Sing,health_UK,health_US,response_Sing,response_UK,response_US,stringency_Sing,stringency_UK,stringency_US)~month(Date),
+             data=total[total["Date"]>="2021-01-01 UTC",],FUN=sum)
+
+colnames(totalbymonth1)[1]="Month"
+colnames(totalbymonth2)[1]="Month"
+
+totalbymonth2$Month=c(13,14,15,16,17)
+totalbymonth=rbind(totalbymonth1,totalbymonth2)
+
+colnames(unemployment)=c("Date","unemployment_Sing","unemployment_UK","unemployment_US","Month")
+
+totalbymonth=merge(totalbymonth,unemployment,by="Month")
+totalbymonth=totalbymonth[,-17]
+M = cor(totalbymonth[,-1])
+corrplot(M, order = "hclust", addrect = 2)
+corrplot(M, type = "upper")
+corrplot.mixed(M, lower.col = "black", number.cex = .7)
+
+```
+
+# Linear Model
+
+
+```{r}
+
+model_Sing_lm=lm(unemployment_Sing~economic_Sing+health_Sing+response_Sing+stringency_Sing+covid_Sing,data = totalbymonth)
+summary(model_Sing_lm)
+```
+
+```{r}
+
+model_US_lm=lm(unemployment_US~economic_US+health_US+response_US+stringency_US+covid_US,data = totalbymonth)
+summary(model_US_lm)
+```
+
+
+
+```{r}
+
+model_UK_lm=lm(unemployment_UK~economic_UK+health_UK+response_UK+stringency_UK+covid_UK,data = totalbymonth)
+summary(model_UK_lm)
+```
+
+```{r}
+total.Sing=total[,c("Date","covid_Sing","economic_Sing","health_Sing","response_Sing","stringency_Sing")]
+total.US=total[,c("Date","covid_US","economic_US","health_US","response_US","stringency_US")]
+total.UK=total[,c("Date","covid_UK","economic_UK","health_UK","response_UK","stringency_UK")]
+totalbymonth.Sing=totalbymonth[,c("Month","covid_Sing","economic_Sing","health_Sing","response_Sing","stringency_Sing","unemployment_Sing")]
+totalbymonth.US=totalbymonth[,c("Month","covid_US","economic_US","health_US","response_US","stringency_US","unemployment_US")]
+totalbymonth.UK=totalbymonth[,c("Month","covid_UK","economic_UK","health_UK","response_UK","stringency_UK","unemployment_UK")]
+```
+
+
+```{r}
+for (i in 2:7){
+  for(j in 2:7){
+    if (j!=i){
+      GX=colnames(totalbymonth.Sing)[i]
+      GY=colnames(totalbymonth.Sing)[j]
+      EGtest <- grangertest(totalbymonth.Sing[,j] ~ totalbymonth.Sing[,i],order = 1, data = totalbymonth.Sing)
+      if (EGtest$`Pr(>F)`[2]<0.1){
+        print(paste(GX," is a cause for",GY))
+      }
+    }
+  }
+}
+```
+```{r}
+for (i in 2:7){
+  for(j in 2:7){
+    if (j!=i){
+      GX=colnames(totalbymonth.US)[i]
+      GY=colnames(totalbymonth.US)[j]
+      EGtest <- grangertest(totalbymonth.US[,j] ~ totalbymonth.US[,i],order = 1, data = totalbymonth.US)
+      if (EGtest$`Pr(>F)`[2]<0.1){
+        print(paste(GX," is a cause for",GY))
+      }
+    }
+  }
+}
+```
+
+
+
+```{r}
+for (i in 2:7){
+  for(j in 2:7){
+    if (j!=i){
+      GX=colnames(totalbymonth.UK)[i]
+      GY=colnames(totalbymonth.UK)[j]
+      EGtest <- grangertest(totalbymonth.UK[,j] ~ totalbymonth.UK[,i],order = 1, data = totalbymonth.UK)
+      if (EGtest$`Pr(>F)`[2]<0.1){
+        print(paste(GX," is a cause for",GY))
+      }
+    }
+  }
+}
+```
+
+```{r}
+for (i in 2:6){
+  for(j in 2:6){
+    if (j!=i){
+      GX=colnames(total.Sing)[i]
+      GY=colnames(total.Sing)[j]
+      EGtest <- grangertest(total.Sing[,j] ~ total.Sing[,i],order = 1, data = total.Sing)
+      if (EGtest$`Pr(>F)`[2]<0.1){
+        print(paste(GX," is a cause for",GY))
+      }
+    }
+  }
+}
+```
+```{r}
+for (i in 2:6){
+  for(j in 2:6){
+    if (j!=i){
+      GX=colnames(total.US)[i]
+      GY=colnames(total.US)[j]
+      EGtest <- grangertest(total.US[,j] ~ total.US[,i],order = 1, data = total.US)
+      if (EGtest$`Pr(>F)`[2]<0.1){
+        print(paste(GX," is a cause for",GY))
+      }
+    }
+  }
+}
+```
+
+```{r}
+for (i in 2:6){
+  for(j in 2:6){
+    if (j!=i){
+      GX=colnames(total.UK)[i]
+      GY=colnames(total.UK)[j]
+      EGtest <- grangertest(total.UK[,j] ~ total.UK[,i],order = 1, data = total.UK)
+      if (EGtest$`Pr(>F)`[2]<0.1){
+        print(paste(GX," is a cause for",GY))
+      }
+    }
+  }
+}
+```
+
+```{r}
+p2 <- round(adf.test(totalbymonth.Sing[,2])$p.value,3)
+p3 <- round(adf.test(totalbymonth.Sing[,3])$p.value,3)
+p4 <- round(adf.test(totalbymonth.Sing[,4])$p.value,3)
+p5 <- round(adf.test(totalbymonth.Sing[,5])$p.value,3)
+p6 <- round(adf.test(totalbymonth.Sing[,6])$p.value,3)
+p7 <- round(adf.test(totalbymonth.Sing[,7])$p.value,3)
+Sing_df <- data.frame(matrix(c(p2,p3,p4,p5,p6,p7),nrow=1))
+colnames(Sing_df) <- c("covid_Sing","economic_Sing","health_Sing","response_Sing","stringency_Sing","Unemployment_Sing")
+rownames(Sing_df) <- c("单位根检验的p值")
+p2 <- round(adf.test(totalbymonth.US[,2])$p.value,3)
+p3 <- round(adf.test(totalbymonth.US[,3])$p.value,3)
+p4 <- round(adf.test(totalbymonth.US[,4])$p.value,3)
+p5 <- round(adf.test(totalbymonth.US[,5])$p.value,3)
+p6 <- round(adf.test(totalbymonth.US[,6])$p.value,3)
+p7 <- round(adf.test(totalbymonth.US[,7])$p.value,3)
+US_df <- data.frame(matrix(c(p2,p3,p4,p5,p6,p7),nrow=1))
+colnames(US_df) <- c("covid_US","economic_US","health_US","response_US","stringency_US","Unemployment_US")
+rownames(US_df) <- c("单位根检验的p值")
+p2 <- round(adf.test(totalbymonth.UK[,2])$p.value,3)
+p3 <- round(adf.test(totalbymonth.UK[,3])$p.value,3)
+p4 <- round(adf.test(totalbymonth.UK[,4])$p.value,3)
+p5 <- round(adf.test(totalbymonth.UK[,5])$p.value,3)
+p6 <- round(adf.test(totalbymonth.UK[,6])$p.value,3)
+p7 <- round(adf.test(totalbymonth.UK[,7])$p.value,3)
+UK_df <- data.frame(matrix(c(p2,p3,p4,p5,p6,p7),nrow=1))
+colnames(UK_df) <- c("covid_UK","economic_UK","health_UK","response_UK","stringency_UK","Unemployment_UK")
+rownames(UK_df) <- c("单位根检验的p值")
+Sing_df
+US_df
+UK_df
+```
+
+
+```{r}
+mq(total.Sing[,-1],lag=12)
+mq(total.US[,-1],lag=12)
+mq(total.UK[,-1],lag=12)
+
+mq(totalbymonth.Sing[,-1],lag=12)
+mq(totalbymonth.US[,-1],lag=12)
+mq(totalbymonth.UK[,-1],lag=12)
+```
+
+
+
+
+```{r}
+
+Sing_var=vars::VAR(totalbymonth.Sing,p=1)
+diagnostic_Sing <- stability(Sing_var, type = c("OLS-CUSUM"), h = 0.15, dynamic = FALSE, rescale = T)
+
+
+par(mfrow=c(3,2))
+plot(diagnostic_Sing$stability$covid_Sing,main='OLS-base CSingUM test：covid_Sing')
+plot(diagnostic_Sing$stability$economic_Sing,main='OLS-base CSingUM test：economic_Sing')
+plot(diagnostic_Sing$stability$health_Sing,main='OLS-base CSingUM test：health_Sing')
+plot(diagnostic_Sing$stability$response_Sing,main='OLS-base CSingUM test：response_Sing')
+plot(diagnostic_Sing$stability$stringency_Sing,main='OLS-base CSingUM test：stringency_Sing')
+plot(diagnostic_Sing$stability$unemployment_Sing,main='OLS-base CSingUM test：unemployment_Sing')
+
+
+US_var=vars::VAR(totalbymonth.US,p=1)
+diagnostic_US <- stability(US_var, type = c("OLS-CUSUM"), h = 0.15, dynamic = FALSE, rescale = T)
+
+
+par(mfrow=c(3,2))
+plot(diagnostic_US$stability$covid_US,main='OLS-base CUSUM test：covid_US')
+plot(diagnostic_US$stability$economic_US,main='OLS-base CUSUM test：economic_US')
+plot(diagnostic_US$stability$health_US,main='OLS-base CUSUM test：health_US')
+plot(diagnostic_US$stability$response_US,main='OLS-base CUSUM test：response_US')
+plot(diagnostic_US$stability$stringency_US,main='OLS-base CUSUM test：stringency_US')
+plot(diagnostic_US$stability$unemployment_US,main='OLS-base CUSUM test：unemployment_US')
+
+
+
+UK_var=vars::VAR(totalbymonth.UK,p=1)
+diagnostic_UK <- stability(UK_var, type = c("OLS-CUSUM"), h = 0.15, dynamic = FALSE, rescale = T)
+
+
+par(mfrow=c(3,2))
+plot(diagnostic_UK$stability$covid_UK,main='OLS-base CUSUM test：covid_UK')
+plot(diagnostic_UK$stability$economic_UK,main='OLS-base CUSUM test：economic_UK')
+plot(diagnostic_UK$stability$health_UK,main='OLS-base CUSUM test：health_UK')
+plot(diagnostic_UK$stability$response_UK,main='OLS-base CUSUM test：response_UK')
+plot(diagnostic_UK$stability$stringency_UK,main='OLS-base CUSUM test：stringency_UK')
+plot(diagnostic_UK$stability$unemployment_UK,main='OLS-base CUSUM test：unemployment_UK')
+```
+
+
+```{r}
+MTSplot(as.ts(total.Sing))
+MTSplot(as.ts(total.US))
+MTSplot(as.ts(total.UK))
+```
+
+
+```{r}
+
+
+train_size <- nrow(total)
+test_size=floor(nrow(total)/3)
+train_ind <- 1:train_size
+train_size <- nrow(total)
+test_size=floor(nrow(total)/3)
+forecast_time=data.frame(Date=as.Date(total[nrow(total),1])+1)
+for(i in 2:test_size){
+  forecast_time[i,1]=as.Date(total[nrow(total),1])+i
+}
+
+total.Sing.train <- total.Sing[train_ind, ]
+
+
+VARselect(total.Sing.train[,-1], lag.max=8, type="const")[["selection"]]
+total.Sing.var=VAR(as.ts(total.Sing.train[,-1]),p=1,type="const")
+serial.test(total.Sing.var,lags.pt = 10, type="PT.asymptotic")
+plot(forecast(total.Sing.var,test_size),xlab="Day")
+MTSplot(as.ts(total.Sing[,-1]))
+
+
+forest.total.Sing=forecast(total.Sing.var,test_size)
+
+forest.total.Sing.covid=cbind(forecast_time,forest.total.Sing$forecast[1]$covid_Sing)
+colnames(forest.total.Sing.covid)=c("Date","forecast_Sing_covid","forecast_Sing_covid_low_80","forecast_Sing_covid_high_80","forecast_Sing_covid_low_95","forecast_Sing_covid_high_95")
+
+write.csv(forest.total.Sing.covid,file="forest_Sing_covid.csv",row.names = F)
+
+
+forest.total.Sing.economic=cbind(forecast_time,forest.total.Sing$forecast[2]$economic_Sing)
+colnames(forest.total.Sing.economic)=c("Date","forecast_Sing_economic","forecast_Sing_economic_low_80","forecast_Sing_economic_high_80","forecast_Sing_economic_low_95","forecast_Sing_economic_high_95")
+write.csv(forest.total.Sing.economic,file="forest_Sing_economic.csv",row.names = F)
+
+forest.total.Sing.health=cbind(forecast_time,forest.total.Sing$forecast[3]$health_Sing)
+colnames(forest.total.Sing.health)=c("Date","forecast_Sing_health","forecast_Sing_health_low_80","forecast_Sing_health_high_80","forecast_Sing_health_low_95","forecast_Sing_health_high_95")
+write.csv(forest.total.Sing.health,file="forest_Sing_health.csv",row.names = F)
+
+
+forest.total.Sing.response=cbind(forecast_time,forest.total.Sing$forecast[4]$response_Sing)
+colnames(forest.total.Sing.response)=c("Date","forecast_Sing_response","forecast_Sing_response_low_80","forecast_Sing_response_high_80","forecast_Sing_response_low_95","forecast_Sing_response_high_95")
+write.csv(forest.total.Sing.response,file="forest_Sing_response.csv",row.names = F)
+
+forest.total.Sing.stringency=cbind(forecast_time,forest.total.Sing$forecast[5]$stringency_Sing)
+colnames(forest.total.Sing.stringency)=c("Date","forecast_Sing_stringency","forecast_Sing_stringency_low_80","forecast_Sing_stringency_high_80","forecast_Sing_stringency_low_95","forecast_Sing_stringency_high_95")
+write.csv(forest.total.Sing.stringency,file="forest_Sing_strigency.csv",row.names = F)
+
+
+forest.total.Sing.all=cbind(forest.total.Sing.covid,forest.total.Sing.economic,forest.total.Sing.health,forest.total.Sing.response,forest.total.Sing.stringency)
+forest.total.Sing=cbind(forest.total.Sing.covid[,c(1,2)],forest.total.Sing.economic[,c(1,2)],forest.total.Sing.health[,c(1,2)],forest.total.Sing.response[,c(1,2)],forest.total.Sing.stringency[,c(1,2)])
+
+
+forest.total.Sing=forest.total.Sing[,c(1,2,4,6,8,10)]
+
+write.csv(forest.total.Sing,file="forest_Sing.csv",row.names = F)
+head(forest.total.Sing.covid[,-1])
+head(forest.total.Sing.economic[,-1])
+head(forest.total.Sing.health[,-1])
+head(forest.total.Sing.response[,-1])
+head(forest.total.Sing.stringency[,-1])
+```
+
+
+
+
+
+
+
+```{r}
+
+
+train_size <- nrow(total)
+test_size=floor(nrow(total)/3)
+train_ind <- 1:train_size
+train_size <- nrow(total)
+test_size=floor(nrow(total)/3)
+forecast_time=data.frame(Date=as.Date(total[nrow(total),1])+1)
+for(i in 2:test_size){
+  forecast_time[i,1]=as.Date(total[nrow(total),1])+i
+}
+
+
+total.UK.train <- total.UK[train_ind, ]
+
+VARselect(total.UK.train[,-1], lag.max=8, type="const")[["selection"]]
+total.UK.var=VAR(as.ts(total.UK.train[,-1]),p=1,type="const")
+serial.test(total.UK.var,lags.pt = 10, type="PT.asymptotic")
+plot(forecast(total.UK.var,test_size),xlab="Day")
+MTSplot(as.ts(total.UK[,-1]))
+forest.total.UK=forecast(total.UK.var,test_size)
+
+forest.total.UK.covid=cbind(forecast_time,forest.total.UK$forecast[1]$covid_UK)
+colnames(forest.total.UK.covid)=c("Date","forecast_UK_covid","forecast_UK_covid_low_80","forecast_UK_covid_high_80","forecast_UK_covid_low_95","forecast_UK_covid_high_95")
+
+write.csv(forest.total.UK.covid,file="forest_UK_covid.csv",row.names = F)
+
+
+forest.total.UK.economic=cbind(forecast_time,forest.total.UK$forecast[2]$economic_UK)
+colnames(forest.total.UK.economic)=c("Date","forecast_UK_economic","forecast_UK_economic_low_80","forecast_UK_economic_high_80","forecast_UK_economic_low_95","forecast_UK_economic_high_95")
+write.csv(forest.total.UK.economic,file="forest_UK_economic.csv",row.names = F)
+
+forest.total.UK.health=cbind(forecast_time,forest.total.UK$forecast[3]$health_UK)
+colnames(forest.total.UK.health)=c("Date","forecast_UK_health","forecast_UK_health_low_80","forecast_UK_health_high_80","forecast_UK_health_low_95","forecast_UK_health_high_95")
+write.csv(forest.total.UK.health,file="forest_UK_health.csv",row.names = F)
+
+
+forest.total.UK.response=cbind(forecast_time,forest.total.UK$forecast[4]$response_UK)
+colnames(forest.total.UK.response)=c("Date","forecast_UK_response","forecast_UK_response_low_80","forecast_UK_response_high_80","forecast_UK_response_low_95","forecast_UK_response_high_95")
+write.csv(forest.total.UK.response,file="forest_UK_response.csv",row.names = F)
+
+forest.total.UK.stringency=cbind(forecast_time,forest.total.UK$forecast[5]$stringency_UK)
+colnames(forest.total.UK.stringency)=c("Date","forecast_UK_stringency","forecast_UK_stringency_low_80","forecast_UK_stringency_high_80","forecast_UK_stringency_low_95","forecast_UK_stringency_high_95")
+write.csv(forest.total.UK.stringency,file="forest_UK_strigency.csv",row.names = F)
+
+
+forest.total.UK.all=cbind(forest.total.UK.covid,forest.total.UK.economic,forest.total.UK.health,forest.total.UK.response,forest.total.UK.stringency)
+
+forest.total.UK=cbind(forest.total.UK.covid[,c(1,2)],forest.total.UK.economic[,c(1,2)],forest.total.UK.health[,c(1,2)],forest.total.UK.response[,c(1,2)],forest.total.UK.stringency[,c(1,2)])
+
+forest.total.UK=forest.total.UK[,c(1,2,4,6,8,10)]
+write.csv(forest.total.UK,file="forest_UK.csv",row.names = F)
+head(forest.total.UK.covid[,-1])
+head(forest.total.UK.economic[,-1])
+head(forest.total.UK.health[,-1])
+head(forest.total.UK.response[,-1])
+head(forest.total.UK.stringency[,-1])
+```
+
+
+
+
+```{r}
+
+
+train_size <- nrow(total)
+test_size=floor(nrow(total)/3)
+train_ind <- 1:train_size
+train_size <- nrow(total)
+test_size=floor(nrow(total)/3)
+forecast_time=data.frame(Date=as.Date(total[nrow(total),1])+1)
+for(i in 2:test_size){
+  forecast_time[i,1]=as.Date(total[nrow(total),1])+i
+}
+
+
+total.US.train <- total.US[train_ind, ]
+
+VARselect(total.US.train[,-1], lag.max=8, type="const")[["selection"]]
+total.US.var=VAR(as.ts(total.US.train[,-1]),p=1,type="const")
+serial.test(total.US.var,lags.pt = 10, type="PT.asymptotic")
+plot(forecast(total.US.var,test_size),xlab="Day")
+MTSplot(as.ts(total.US[,-1]))
+
+
+forest.total.US=forecast(total.US.var,test_size)
+
+forest.total.US.covid=cbind(forecast_time,forest.total.US$forecast[1]$covid_US)
+colnames(forest.total.US.covid)=c("Date","forecast_US_covid","forecast_US_covid_low_80","forecast_US_covid_high_80","forecast_US_covid_low_95","forecast_US_covid_high_95")
+
+write.csv(forest.total.US.covid,file="forest_US_covid.csv",row.names = F)
+
+
+forest.total.US.economic=cbind(forecast_time,forest.total.US$forecast[2]$economic_US)
+colnames(forest.total.US.economic)=c("Date","forecast_US_economic","forecast_US_economic_low_80","forecast_US_economic_high_80","forecast_US_economic_low_95","forecast_US_economic_high_95")
+write.csv(forest.total.US.economic,file="forest_US_economic.csv",row.names = F)
+
+forest.total.US.health=cbind(forecast_time,forest.total.US$forecast[3]$health_US)
+colnames(forest.total.US.health)=c("Date","forecast_US_health","forecast_US_health_low_80","forecast_US_health_high_80","forecast_US_health_low_95","forecast_US_health_high_95")
+write.csv(forest.total.US.health,file="forest_US_health.csv",row.names = F)
+
+
+forest.total.US.response=cbind(forecast_time,forest.total.US$forecast[4]$response_US)
+colnames(forest.total.US.response)=c("Date","forecast_US_response","forecast_US_response_low_80","forecast_US_response_high_80","forecast_US_response_low_95","forecast_US_response_high_95")
+write.csv(forest.total.US.response,file="forest_US_response.csv",row.names = F)
+
+forest.total.US.stringency=cbind(forecast_time,forest.total.US$forecast[5]$stringency_US)
+colnames(forest.total.US.stringency)=c("Date","forecast_US_stringency","forecast_US_stringency_low_80","forecast_US_stringency_high_80","forecast_US_stringency_low_95","forecast_US_stringency_high_95")
+write.csv(forest.total.US.stringency,file="forest_US_strigency.csv",row.names = F)
+
+
+forest.total.US.all=cbind(forest.total.US.covid,forest.total.US.economic,forest.total.US.health,forest.total.US.response,forest.total.US.stringency)
+
+
+forest.total.US=cbind(forest.total.US.covid[,c(1,2)],forest.total.US.economic[,c(1,2)],forest.total.US.health[,c(1,2)],forest.total.US.response[,c(1,2)],forest.total.US.stringency[,c(1,2)])
+forest.total.US=forest.total.US[,c(1,2,4,6,8,10)]
+write.csv(forest.total.US,file="forest_US.csv",row.names = F)
+head(forest.total.US.covid[,-1])
+head(forest.total.US.economic[,-1])
+head(forest.total.US.health[,-1])
+head(forest.total.US.response[,-1])
+head(forest.total.US.stringency[,-1])
+
+```
+
+
+
+```{r}
+forest.total=cbind(forest.total.Sing,forest.total.UK[,-1],forest.total.US[,-1])
+write.csv(forest.total,file = "forest_total.csv",row.names = F)
+```
+
+```{r}
+head(totalbymonth)
+```
+
+
+
+```{r}
+
+
+train_size <- nrow(totalbymonth)
+test_size=floor(nrow(totalbymonth)/2)
+train_ind <- 1:train_size
+forecast_time=data.frame(Month=totalbymonth[nrow(totalbymonth),1]+1)
+for(i in 2:test_size){
+  forecast_time[i,1]=totalbymonth[nrow(totalbymonth),1]+i
+}
+
+totalbymonth.Sing.train <- totalbymonth.Sing[train_ind, ]
+
+
+
+VARselect(totalbymonth.Sing.train[,-1], lag.max=8, type="const")[["selection"]]
+totalbymonth.Sing.var=VAR(as.ts(totalbymonth.Sing.train[,-1]),p=1,type="const")
+forecast.totalbymonth.Sing.var=forecast(totalbymonth.Sing.var,test_size)
+plot(forecast.totalbymonth.Sing.var,xlab="Month")
+MTSplot(as.ts(totalbymonth.Sing[,-1]))
+
+
+
+
+totalbymonth.UK.train <- totalbymonth.UK[train_ind, ]
+
+VARselect(totalbymonth.UK.train[,-1], lag.max=8, type="const")[["selection"]]
+totalbymonth.UK.var=VAR(as.ts(totalbymonth.UK.train[,-1]),p=1,type="const")
+forecast.totalbymonth.UK.var=forecast(totalbymonth.UK.var,test_size)
+plot(forecast.totalbymonth.UK.var,xlab="Month")
+MTSplot(as.ts(totalbymonth.UK[,-1]))
+
+
+
+totalbymonth.US.train <- totalbymonth.US[train_ind, ]
+VARselect(totalbymonth.US.train[,-1], lag.max=8, type="const")[["selection"]]
+totalbymonth.US.var=VAR(as.ts(totalbymonth.US.train[,-1]),p=1,type="const")
+forecast.totalbymonth.US.var=forecast(totalbymonth.US.var,test_size)
+plot(forecast.totalbymonth.US.var,xlab="Month")
+MTSplot(as.ts(totalbymonth.US[,-1]))
+```
+
+```{r}
+forecast.totalbymonth.US.var$forecast[6]$unemployment_US
+forecast.totalbymonth.Sing.var$forecast[6]$unemployment_Sing
+forecast.totalbymonth.UK.var$forecast[6]$unemployment_UK
+```
+
+
+```{r}
+
+forecast.US.unemployment=data.frame(forecast.totalbymonth.US.var$forecast[6]$unemployment_US)
+
+forecast.Sing.unemployment=data.frame(forecast.totalbymonth.Sing.var$forecast[6]$unemployment_Sing)
+
+forecast.UK.unemployment=data.frame(forecast.totalbymonth.UK.var$forecast[6]$unemployment_UK)
+colnames(forecast.US.unemployment)==c("unemploymeny_US","unemploymeny_US_low80","unemploymeny_US_high80","unemploymeny_US_low95","unemploymeny_US_high95")
+colnames(forecast.Sing.unemployment)=c("unemploymeny_Sing","unemploymeny_Sing_low80","unemploymeny_Sing_high80","unemploymeny_Sing_low95","unemploymeny_Sing_high95")
+colnames(forecast.UK.unemployment)=c("unemploymeny_UK","unemploymeny_UK_low80","unemploymeny_UK_high80","unemploymeny_UK_low95","unemploymeny_UK_high95")
+```
+
+
+
+```{r}
+Month=data.frame(Month=c("2021-06","2021-07","2021-08","2021-09","2021-10","2021-11","2021-12","2022-01"))
+
+forecast.unemployment.all=cbind(Month,forecast.Sing.unemployment,forecast.UK.unemployment,forecast.US.unemployment)
+head(forecast.unemployment.all)
+```
+
+```{r}
+forecast.unemployment=forecast.unemployment.all[,c(1,2,7,12)]
+colnames(forecast.unemployment)[4]="unemploymeny_US"
+write.csv(forecast.unemployment,file = "forecast_unemployment.csv",row.names = F)
+
+```
+
+
